@@ -57,7 +57,7 @@ td{padding:10px;border-bottom:1px solid var(--line);vertical-align:middle}
 .check input{margin-top:4px;width:18px;height:18px}
 .center{max-width:430px;margin:8vh auto 0}
 .loginlogo{height:52px;margin:0 auto 18px;display:block}
-@media(max-width:900px){.g3,.g4{grid-template-columns:repeat(2,1fr)}h1.hello{font-size:26px}}
+@media(max-width:900px){.topbar{border-radius:28px;padding:12px 14px;gap:10px 12px}.topbar img.logo{order:1}.avatar{order:2;margin-left:auto}.nav{order:3;flex:0 0 100%;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;padding-bottom:2px}.nav::-webkit-scrollbar{display:none}.pill{flex:none;white-space:nowrap}.g3,.g4{grid-template-columns:repeat(2,1fr)}h1.hello{font-size:26px}}
 @media(max-width:600px){.g2,.g3,.g4{grid-template-columns:1fr}.panel{padding:14px 12px 22px;border-radius:24px}.nav{justify-content:flex-start}.big{font-size:36px}}
 :focus-visible{outline:3px solid rgba(31,95,224,.45);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}

@@ -35,6 +35,7 @@ export default function SignDialog({ emp, req, profile, marketing, email, onClos
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [info, setInfo] = useState('');
+  const sigData = useRef<string | null>(null);
 
   async function preview() {
     setBusy(true); setErr('');
@@ -48,6 +49,8 @@ export default function SignDialog({ emp, req, profile, marketing, email, onClos
   }
 
   async function sendOtp() {
+    if (!pad.current || pad.current.isEmpty()) { setErr('กรุณาเซ็นชื่อก่อน'); return; }
+    sigData.current = pad.current.toPng();
     setBusy(true); setErr('');
     const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
     setBusy(false);
@@ -62,7 +65,8 @@ export default function SignDialog({ emp, req, profile, marketing, email, onClos
     try {
       setStep(3);
       const at = new Date();
-      const sig = dataUrlToBytes(pad.current!.toPng());
+      if (!sigData.current) throw new Error('ไม่พบลายเซ็น กรุณากลับไปเซ็นชื่อใหม่');
+      const sig = dataUrlToBytes(sigData.current);
       const { buildPackage, sha256Hex } = await pdfLib();
       const out = await buildPackage(await inputsFor(emp, req, profile, marketing, sig, at));
       let ip: string | null = null;
@@ -95,7 +99,7 @@ export default function SignDialog({ emp, req, profile, marketing, email, onClos
         <p className="sub">ยอดเบิก {baht(req.amount)} บาท · ค่าบริการ {baht(req.fee)} · ค่าโอน {baht(req.transfer_fee)} · ยอดหักจากเงินเดือน <b>{baht(req.total_deduct)} บาท</b></p>
         <div className="steps"><span className={'step ' + (step === 1 ? 'cur' : 'done')}>1 เซ็นชื่อ</span><span className={'step ' + (step === 2 ? 'cur' : step === 3 ? 'done' : '')}>2 ยืนยัน OTP</span><span className={'step ' + (step === 3 ? 'cur' : '')}>3 สร้างเอกสาร</span></div>
 
-        {step === 1 && <>
+        <div style={{ display: step === 1 ? 'block' : 'none' }}>
           <button className="btn ghost sm" onClick={preview} disabled={busy}>{busy ? 'กำลังสร้าง...' : 'ดูตัวอย่างเอกสารก่อนเซ็น (2 ไฟล์)'}</button>
           <p className="label" style={{ margin: '12px 0 6px' }}>เซ็นชื่อในกรอบด้านล่าง (ใช้นิ้วหรือเมาส์)</p>
           <SignaturePad ref={pad} onChange={setEmpty} />
@@ -106,7 +110,7 @@ export default function SignDialog({ emp, req, profile, marketing, email, onClos
             <button className="btn ghost" style={{ flex: 'none' }} onClick={onClose}>ปิด (เซ็นภายหลัง)</button>
             <button className="btn" style={{ flex: 'none' }} disabled={empty || !agree || busy} onClick={sendOtp}>ถัดไป: ส่งรหัส OTP</button>
           </div>
-        </>}
+        </div>
 
         {step >= 2 && <>
           <div className="msg inf">{info}</div>
