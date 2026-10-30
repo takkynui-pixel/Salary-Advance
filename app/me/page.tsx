@@ -27,6 +27,7 @@ export default function Me() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; s: string } | null>(null);
   const [signing, setSigning] = useState<Req | null>(null);
+  const [signOnly, setSignOnly] = useState<'contract' | undefined>(undefined);
   const [ready, setReady] = useState(false);
 
   const load = useCallback(async () => {
@@ -61,7 +62,7 @@ export default function Me() {
   const gross = Math.round((employee?.daily_wage ?? 0) * days * settings.limit_pct * 100) / 100;
   const used = Math.max(0, gross - avail);
   const toSign = reqs.filter(r => r.status === 'pending_sign');
-  const latestDoc = (id: string) => docs.filter(d => d.request_id === id && d.doc_type === 'deduction_consent').sort((a, b) => (a.signed_at < b.signed_at ? 1 : -1))[0];
+  const latestDoc = (id: string, type = 'deduction_consent') => docs.filter(d => d.request_id === id && d.doc_type === type).sort((a, b) => (a.signed_at < b.signed_at ? 1 : -1))[0];
 
   async function submit() {
     setMsg(null);
@@ -116,7 +117,7 @@ export default function Me() {
           {(!complete || !hasAllFiles) && ready && <div className="msg inf">ก่อนเบิกครั้งแรก กรุณากรอกข้อมูลส่วนตัว ({complete ? 'ครบแล้ว' : 'ยังไม่ครบ'}) และอัปโหลดเอกสารแนบ 3 รายการ ({hasAllFiles ? 'ครบแล้ว' : 'ยังไม่ครบ'}) ที่แท็บ "ข้อมูลของฉัน"
             <div style={{ marginTop: 8 }}><button className="btn sm" onClick={() => setTab('profile')}>ไปกรอกข้อมูล</button></div></div>}
           {toSign.length > 0 && <div className="msg err">HR อนุมัติคำขอของคุณแล้ว กรุณาเซ็นใบยินยอมให้หักเงิน เพื่อให้การเงินโอนเงินได้
-            {toSign.map(r => <div key={r.id} style={{ marginTop: 8 }}>อนุมัติ <b>{baht(r.amount)}</b> บาท (ยอดหัก {baht(r.total_deduct)}) <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => setSigning(r)}>เซ็นเอกสาร</button></div>)}</div>}
+            {toSign.map(r => <div key={r.id} style={{ marginTop: 8 }}>อนุมัติ <b>{baht(r.amount)}</b> บาท (ยอดหัก {baht(r.total_deduct)}) <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => { setSignOnly(undefined); setSigning(r); }}>เซ็นเอกสาร</button></div>)}</div>}
 
           <div className="card" style={{ maxWidth: 560 }}>
             <h2>ขอเบิกเงินล่วงหน้า</h2>
@@ -140,13 +141,15 @@ export default function Me() {
             {reqs.length === 0 ? <p className="sub">ยังไม่มีรายการเบิก</p> : (
               <table><thead><tr><th>วันที่</th><th>รอบ</th><th className="right">ยอดที่ขอ</th><th className="right">ยอดอนุมัติ</th><th className="right">ยอดหัก</th><th>สถานะ</th><th>เอกสาร</th><th></th></tr></thead><tbody>
                 {reqs.map(r => {
-                  const ld = latestDoc(r.id);
+                  const ld = latestDoc(r.id); const lc = latestDoc(r.id, 'loan_contract'); const done = ['approved', 'transferred', 'deducted'].includes(r.status);
                   return <tr key={r.id}>
                     <td>{dateTimeTH(r.created_at)}</td><td>{r.pay_periods?.label}</td>
                     <td className="right">{baht(r.requested_amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.total_deduct)}</td>
                     <td><span className={'badge ' + STATUS_TONE[r.status]}>{STATUS_TH[r.status]}</span>{r.hr_note ? <div className="label">{r.hr_note}</div> : null}</td>
-                    <td>{ld && ['approved', 'transferred', 'deducted'].includes(r.status) && <button className="btn ghost sm" onClick={() => openPrivate('signed-docs', ld.pdf_path)}>ใบยินยอมหัก</button>}
-                      {r.status === 'pending_sign' && <button className="btn sm" onClick={() => setSigning(r)}>เซ็นเอกสาร</button>}</td>
+                    <td>{done && lc && <button className="btn ghost sm" style={{ marginRight: 6 }} onClick={() => openPrivate('signed-docs', lc.pdf_path)}>สัญญา</button>}
+                      {done && ld && <button className="btn ghost sm" onClick={() => openPrivate('signed-docs', ld.pdf_path)}>ใบยินยอมหัก</button>}
+                      {done && !lc && <button className="btn sm" onClick={() => { setSignOnly('contract'); setSigning(r); }}>เซ็นสัญญา</button>}
+                      {r.status === 'pending_sign' && <button className="btn sm" onClick={() => { setSignOnly(undefined); setSigning(r); }}>เซ็นเอกสาร</button>}</td>
                     <td>{(r.status === 'pending_hr' || r.status === 'pending_sign') && <button className="btn danger sm" onClick={() => cancel(r.id)}>ยกเลิก</button>}</td>
                   </tr>;
                 })}
@@ -160,8 +163,8 @@ export default function Me() {
           <Uploads employeeId={employee.id} onChange={setFiles} />
         </>}
 
-        {signing && <SignDialog emp={employee} req={signing}
-          onClose={() => setSigning(null)} onDone={() => { setSigning(null); setMsg({ t: 'ok', s: 'เซ็นเอกสารเรียบร้อย รอการเงินโอนเงิน' }); setTab('home'); load(); }} />}
+        {signing && <SignDialog emp={employee} req={signing} profile={profile} marketing={marketing} only={signOnly}
+          onClose={() => setSigning(null)} onDone={() => { setSigning(null); setMsg({ t: 'ok', s: signOnly ? 'เซ็นสัญญาเรียบร้อย' : 'เซ็นเอกสารเรียบร้อย รอการเงินโอนเงิน' }); setTab('home'); load(); }} />}
       </>}
     </Shell>
   );

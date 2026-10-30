@@ -57,7 +57,7 @@ export default function RequestsTab({ role }: { role: Role }) {
     if (error) { setMsg(error.message); return; }
     setAppr(null); load();
   }
-  const latestDoc = (id: string) => docs.filter(d => d.request_id === id && d.doc_type === 'deduction_consent').sort((a, b) => (a.signed_at < b.signed_at ? 1 : -1))[0];
+  const latestDoc = (id: string, type = 'deduction_consent') => docs.filter(d => d.request_id === id && d.doc_type === type).sort((a, b) => (a.signed_at < b.signed_at ? 1 : -1))[0];
 
   async function doTransfer() {
     if (!xfer) return; setBusy(true); setMsg('');
@@ -85,7 +85,7 @@ export default function RequestsTab({ role }: { role: Role }) {
         <tbody>
           {rows.length === 0 && <tr><td colSpan={9} className="label">ไม่มีรายการ</td></tr>}
           {rows.map(r => {
-            const ld = latestDoc(r.id); const bank = apps[r.employee_id];
+            const ld = latestDoc(r.id); const lc = latestDoc(r.id, 'loan_contract'); const bank = apps[r.employee_id];
             return <tr key={r.id}>
               <td>{dateTimeTH(r.created_at)}</td>
               <td><b>{r.employees?.full_name}</b><div className="label">{r.employees?.emp_code} · {r.employees?.client_company}</div></td>
@@ -93,7 +93,7 @@ export default function RequestsTab({ role }: { role: Role }) {
               <td className="right" title={`${r.days_snapshot} วัน × ${r.wage_snapshot}`}>{baht(r.limit_snapshot)}<div className="label">{r.days_snapshot} วัน × {baht(r.wage_snapshot)}</div></td>
               <td className="right">{baht(r.requested_amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.total_deduct)}</td>
               <td><span className={'badge ' + STATUS_TONE[r.status]}>{STATUS_TH[r.status]}</span>{r.transfer_ref && <div className="label">อ้างอิง {r.transfer_ref}</div>}{r.hr_note && <div className="label">{r.hr_note}</div>}</td>
-              <td>{ld && ['approved', 'transferred', 'deducted'].includes(r.status) ? <button className="btn ghost sm" onClick={() => openPrivate('signed-docs', ld.pdf_path)}>ใบยินยอมหัก</button> : <span className="label">{r.status === 'pending_sign' ? 'รอพนักงานเซ็น' : '-'}</span>}</td>
+              <td>{['approved', 'transferred', 'deducted'].includes(r.status) ? <>{lc ? <button className="btn ghost sm" style={{ margin: '0 6px 4px 0' }} onClick={() => openPrivate('signed-docs', lc.pdf_path)}>สัญญา</button> : <span className="label" style={{ marginRight: 6 }}>ไม่มีสัญญา</span>}{ld && <button className="btn ghost sm" onClick={() => openPrivate('signed-docs', ld.pdf_path)}>ใบยินยอมหัก</button>}</> : <span className="label">{r.status === 'pending_sign' ? 'รอพนักงานเซ็น' : '-'}</span>}</td>
               <td>
                 {r.status === 'pending_hr' && canHr && <>
                   <button className="btn sm" onClick={() => openApprove(r)}>ตรวจสอบและอนุมัติ</button>{' '}

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sendBatch } from '@/lib/mail';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,15 +64,8 @@ export async function POST(req: Request) {
     <p><a href="${esc(origin)}/staff" style="background:#1f5fe0;color:#fff;padding:10px 20px;border-radius:999px;text-decoration:none">เปิดระบบ</a></p>
     <p style="font-size:12px;color:#6b7896;margin-top:20px">บริษัท วีทีเอ เซอร์วิส จำกัด · อีเมลนี้ส่งอัตโนมัติ</p></div>`;
 
-  const results = await Promise.allSettled(recipients.map(async to => {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST', headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to: [to], subject, html }),
-    });
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-  }));
-  const ok = results.filter(x => x.status === 'fulfilled').length;
-  results.forEach(x => { if (x.status === 'rejected') console.error('notify-request send failed:', (x as PromiseRejectedResult).reason); });
+  const r2 = await sendBatch(recipients.map(to => ({ to, subject, html })));
+  const ok = r2.ok;
   if (ok === 0) await admin.from('advance_requests').update({ notified_at: null }).eq('id', requestId);
   return NextResponse.json({ sent: ok, total: recipients.length });
 }
