@@ -16,18 +16,15 @@ export function refNo(req: Req) {
 }
 const dataUrlToBytes = (u: string) => Uint8Array.from(atob(u.split(',')[1]), c => c.charCodeAt(0));
 
-export default function SignDialog({ emp, req, email, onClose, onDone }: {
-  emp: Employee; req: Req; email: string; onClose: () => void; onDone: () => void;
+export default function SignDialog({ emp, req, onClose, onDone }: {
+  emp: Employee; req: Req; onClose: () => void; onDone: () => void;
 }) {
   const pad = useRef<PadHandle>(null);
   const sigData = useRef<string | null>(null);
   const [empty, setEmpty] = useState(true);
   const [agree, setAgree] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
-  const [info, setInfo] = useState('');
 
   const inputs = (sig: Uint8Array | null, at: Date) => ({
     refNo: refNo(req), fullName: emp.full_name, empCode: emp.emp_code, position: emp.position || '', company: emp.client_company || '',
@@ -45,23 +42,11 @@ export default function SignDialog({ emp, req, email, onClose, onDone }: {
     setBusy(false);
   }
 
-  async function sendOtp() {
+  async function confirmAndSign() {
     if (!pad.current || pad.current.isEmpty()) { setErr('กรุณาเซ็นชื่อก่อน'); return; }
     sigData.current = pad.current.toPng();
     setBusy(true); setErr('');
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: false } });
-    setBusy(false);
-    if (error) { setErr('ส่งรหัสไม่สำเร็จ: ' + error.message); return; }
-    setInfo('ส่งรหัส OTP ไปที่ ' + email + ' แล้ว'); setStep(2);
-  }
-
-  async function confirmAndSign() {
-    setBusy(true); setErr('');
-    const v = await supabase.auth.verifyOtp({ email, token: code.trim(), type: 'email' });
-    if (v.error) { setErr('รหัส OTP ไม่ถูกต้องหรือหมดอายุ'); setBusy(false); return; }
     try {
-      setStep(3);
-      if (!sigData.current) throw new Error('ไม่พบลายเซ็น กรุณากลับไปเซ็นชื่อใหม่');
       const at = new Date();
       const sig = dataUrlToBytes(sigData.current);
       const { buildDeduction, sha256Hex } = await pdfLib();
@@ -77,13 +62,13 @@ export default function SignDialog({ emp, req, email, onClose, onDone }: {
       if (up.error) throw new Error(up.error.message);
       const ins = await supabase.from('signed_documents').insert({
         employee_id: emp.id, request_id: req.id, doc_type: 'deduction_consent', pdf_path: pdfPath, sha256: await sha256Hex(bytes), signature_path: sigPath,
-        otp_verified: true, signed_ip: ip, signed_user_agent: navigator.userAgent.slice(0, 250), signed_at: at.toISOString(),
+        otp_verified: false, signed_ip: ip, signed_user_agent: navigator.userAgent.slice(0, 250), signed_at: at.toISOString(),
       });
       if (ins.error) throw new Error(ins.error.message);
       const done = await supabase.rpc('complete_signing', { p_id: req.id });
       if (done.error) throw new Error(done.error.message);
       onDone();
-    } catch (e: any) { setErr('เซ็นเอกสารไม่สำเร็จ: ' + e.message + ' (กดลองใหม่ได้ ข้อมูลคำขอยังอยู่)'); setStep(2); }
+    } catch (e: any) { setErr('เซ็นเอกสารไม่สำเร็จ: ' + e.message + ' (กดลองใหม่ได้ ข้อมูลคำขอยังอยู่)'); }
     setBusy(false);
   }
 
@@ -92,9 +77,7 @@ export default function SignDialog({ emp, req, email, onClose, onDone }: {
       <div className="modal">
         <h2>เซ็นใบยินยอมให้หักเงิน</h2>
         <p className="sub">HR อนุมัติ <b>{baht(req.amount)}</b> บาท{req.requested_amount && Number(req.requested_amount) !== Number(req.amount) ? ` (ที่ขอ ${baht(req.requested_amount)})` : ''} · ค่าธรรมเนียม {baht(req.fee)} · ค่าโอน {baht(req.transfer_fee)} · ยอดหักจากเงินเดือน <b>{baht(req.total_deduct)} บาท</b></p>
-        <div className="steps"><span className={'step ' + (step === 1 ? 'cur' : 'done')}>1 เซ็นชื่อ</span><span className={'step ' + (step === 2 ? 'cur' : step === 3 ? 'done' : '')}>2 ยืนยัน OTP</span><span className={'step ' + (step === 3 ? 'cur' : '')}>3 สร้างเอกสาร</span></div>
-
-        <div style={{ display: step === 1 ? 'block' : 'none' }}>
+        <div>
           <button className="btn ghost sm" onClick={preview} disabled={busy}>{busy ? 'กำลังสร้าง...' : 'ดูตัวอย่างเอกสารก่อนเซ็น'}</button>
           <p className="label" style={{ margin: '12px 0 6px' }}>เซ็นชื่อในกรอบด้านล่าง (ใช้นิ้วหรือเมาส์)</p>
           <SignaturePad ref={pad} onChange={setEmpty} />
@@ -103,19 +86,10 @@ export default function SignDialog({ emp, req, email, onClose, onDone }: {
             <label htmlFor="ag">ข้าพเจ้าได้อ่านและเข้าใจใบยินยอมให้หักเงิน และยินยอมให้บริษัทหักเงินจำนวน {baht(req.total_deduct)} บาท จากค่าจ้างในรอบจ่ายถัดไป</label></div>
           <div className="row" style={{ justifyContent: 'flex-end' }}>
             <button className="btn ghost" style={{ flex: 'none' }} onClick={onClose}>ปิด (เซ็นภายหลัง)</button>
-            <button className="btn" style={{ flex: 'none' }} disabled={empty || !agree || busy} onClick={sendOtp}>ถัดไป: ส่งรหัส OTP</button>
+            <button className="btn" style={{ flex: 'none' }} disabled={empty || !agree || busy} onClick={confirmAndSign}>{busy ? 'กำลังสร้างเอกสาร...' : 'ยืนยันและเซ็นเอกสาร'}</button>
           </div>
         </div>
 
-        {step >= 2 && <>
-          <div className="msg inf">{info}</div>
-          <div className="field"><label htmlFor="otp">รหัส OTP จากอีเมล</label>
-            <input id="otp" type="text" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} disabled={step === 3} /></div>
-          <div className="row" style={{ justifyContent: 'flex-end' }}>
-            <button className="btn ghost" style={{ flex: 'none' }} disabled={busy} onClick={() => { setStep(1); setCode(''); }}>กลับ</button>
-            <button className="btn" style={{ flex: 'none' }} disabled={busy || code.trim().length < 6} onClick={confirmAndSign}>{step === 3 ? 'กำลังสร้างเอกสาร...' : 'ยืนยันและเซ็นเอกสาร'}</button>
-          </div>
-        </>}
         {err && <div className="msg err" role="alert">{err}</div>}
       </div>
     </div>

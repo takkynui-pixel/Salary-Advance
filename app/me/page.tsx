@@ -68,9 +68,14 @@ export default function Me() {
     if (!complete || !hasAllFiles) { setMsg({ t: 'err', s: 'กรุณากรอกข้อมูลส่วนตัวและอัปโหลดเอกสารแนบให้ครบก่อน (แท็บ "ข้อมูลของฉัน")' }); return; }
     if (num < settings.min_request) { setMsg({ t: 'err', s: `ยอดขอเบิกขั้นต่ำ ${baht(settings.min_request)} บาท` }); return; }
     setBusy(true);
-    const { error } = await supabase.rpc('request_advance', { p_amount: num });
+    const { data: created, error } = await supabase.rpc('request_advance', { p_amount: num });
     setBusy(false);
     if (error) { setMsg({ t: 'err', s: error.message }); return; }
+    // tell HR and finance by email (best effort — the request is already saved)
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (token && (created as any)?.id) {
+      fetch('/api/notify-request', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ requestId: (created as any).id }) }).catch(() => {});
+    }
     setAmount(''); setMsg({ t: 'ok', s: 'ส่งคำขอแล้ว HR จะตรวจสอบวันทำงานและกำหนดยอดที่อนุมัติ จากนั้นระบบจะให้คุณเซ็นใบยินยอมให้หักเงิน' }); await load();
   }
   async function cancel(id: string) {
@@ -155,7 +160,7 @@ export default function Me() {
           <Uploads employeeId={employee.id} onChange={setFiles} />
         </>}
 
-        {signing && <SignDialog emp={employee} req={signing} email={session!.user.email!}
+        {signing && <SignDialog emp={employee} req={signing}
           onClose={() => setSigning(null)} onDone={() => { setSigning(null); setMsg({ t: 'ok', s: 'เซ็นเอกสารเรียบร้อย รอการเงินโอนเงิน' }); setTab('home'); load(); }} />}
       </>}
     </Shell>

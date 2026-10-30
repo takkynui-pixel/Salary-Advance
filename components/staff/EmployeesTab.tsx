@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { baht, parseTable, dateTimeTH } from '@/lib/format';
+import { baht, parseTable, dateTimeTH, STATUS_TH, STATUS_TONE } from '@/lib/format';
 import { openPrivate } from '../Uploads';
 
 const blank = { emp_code: '', full_name: '', position: '', client_company: '', start_date: '', daily_wage: '', phone: '', email: '' };
@@ -15,6 +15,7 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
   const [view, setView] = useState<any>(null);
   const [vfiles, setVfiles] = useState<any[]>([]);
   const [vdocs, setVdocs] = useState<any[]>([]);
+  const [vreqs, setVreqs] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     let query = supabase.from('employees').select('*').order('emp_code').limit(100);
@@ -44,10 +45,11 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
   async function toggle(e: any) { await supabase.from('employees').update({ active: !e.active }).eq('id', e.id); load(); }
   async function openView(e: any) {
     setView(e);
-    const [{ data: f }, { data: d }] = await Promise.all([
+    const [{ data: f }, { data: d }, { data: r }] = await Promise.all([
       supabase.from('employee_files').select('*').eq('employee_id', e.id).order('uploaded_at', { ascending: false }),
       supabase.from('signed_documents').select('*').eq('employee_id', e.id).order('signed_at', { ascending: false }),
-    ]); setVfiles(f || []); setVdocs(d || []);
+      supabase.from('advance_requests').select('*, pay_periods(label)').eq('employee_id', e.id).order('created_at', { ascending: false }),
+    ]); setVfiles(f || []); setVdocs(d || []); setVreqs(r || []);
   }
   const LBL: Record<string, string> = { id_card: 'บัตรประชาชน', house_registration: 'ทะเบียนบ้าน', bank_book: 'สมุดบัญชี', loan_contract: 'สัญญา', deduction_consent: 'ใบยินยอมหัก' };
 
@@ -83,14 +85,33 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
         <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn ghost" style={{ flex: 'none' }} onClick={() => setForm(null)}>ยกเลิก</button><button className="btn" style={{ flex: 'none' }} onClick={save}>บันทึก</button></div>
       </div></div>}
 
-      {view && <div className="overlay"><div className="modal">
+      {view && <div className="overlay"><div className="modal" style={{ maxWidth: 680 }}>
         <h2>เอกสารของ {view.full_name}</h2>
-        <p className="label">ไฟล์แนบ</p>
+        <p className="label">ไฟล์แนบ (ฉบับล่าสุด)</p>
         {vfiles.length === 0 && <p className="sub">ยังไม่มี</p>}
-        {vfiles.map(f => <div key={f.id} style={{ marginBottom: 6 }}><button className="btn ghost sm" onClick={() => openPrivate('employee-files', f.storage_path)}>{LBL[f.kind]}</button> <span className="label">{dateTimeTH(f.uploaded_at)}</span></div>)}
-        <p className="label" style={{ marginTop: 12 }}>เอกสารที่เซ็นแล้ว</p>
-        {vdocs.length === 0 && <p className="sub">ยังไม่มี</p>}
-        {vdocs.map(d => <div key={d.id} style={{ marginBottom: 6 }}><button className="btn ghost sm" onClick={() => openPrivate('signed-docs', d.pdf_path)}>{LBL[d.doc_type]}</button> <span className="label">{dateTimeTH(d.signed_at)} · OTP {d.otp_verified ? 'ยืนยันแล้ว' : '-'} · IP {d.signed_ip || '-'} · {String(d.sha256).slice(0, 10)}…</span></div>)}
+        {['id_card', 'house_registration', 'bank_book'].map(k => {
+          const all = vfiles.filter(f => f.kind === k); const f = all[0]; if (!f) return null;
+          return <div key={k} style={{ marginBottom: 6 }}><button className="btn ghost sm" onClick={() => openPrivate('employee-files', f.storage_path)}>{LBL[k]}</button> <span className="label">{dateTimeTH(f.uploaded_at)}{all.length > 1 ? ` · มีไฟล์เก่า ${all.length - 1} ฉบับ` : ''}</span>
+            {all.slice(1).map(o => <button key={o.id} className="btn ghost sm" style={{ marginLeft: 6, opacity: .7 }} onClick={() => openPrivate('employee-files', o.storage_path)}>{dateTimeTH(o.uploaded_at)}</button>)}</div>;
+        })}
+        <p className="label" style={{ marginTop: 14 }}>ใบยินยอมให้หักเงิน แยกตามคำขอเบิก</p>
+        {vreqs.length === 0 && <p className="sub">ยังไม่มีคำขอเบิก</p>}
+        {vreqs.map(r => {
+          const docs = vdocs.filter(d => d.request_id === r.id);
+          const valid = docs.filter(d => d.doc_type === 'deduction_consent' && r.hr_at && d.signed_at >= r.hr_at && ['approved', 'transferred', 'deducted'].includes(r.status));
+          const cur = valid[0]; const old = docs.filter(d => d !== cur);
+          return <div key={r.id} className="card" style={{ boxShadow: 'none', border: '1px solid var(--line)', padding: '12px 14px', marginBottom: 8 }}>
+            <div><b>{dateTimeTH(r.created_at)}</b> · {r.pay_periods?.label} <span className={'badge ' + STATUS_TONE[r.status]} style={{ marginLeft: 6 }}>{STATUS_TH[r.status]}</span></div>
+            <div className="label">ขอ {baht(r.requested_amount)}{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '' : ` · อนุมัติ ${baht(r.amount)} · ยอดหัก ${baht(r.total_deduct)}`}</div>
+            <div style={{ marginTop: 6 }}>
+              {cur ? <><button className="btn ghost sm" onClick={() => openPrivate('signed-docs', cur.pdf_path)}>ใบยินยอมหัก (ฉบับที่ใช้)</button>
+                <span className="label"> เซ็น {dateTimeTH(cur.signed_at)} · IP {cur.signed_ip || '-'} · {String(cur.sha256).slice(0, 10)}…</span></>
+                : <span className="label">{r.status === 'pending_sign' ? 'รอพนักงานเซ็นตามยอดที่อนุมัติ' : r.status === 'pending_hr' ? 'รอ HR อนุมัติยอดก่อน จึงจะเซ็นเอกสาร' : 'ไม่มีเอกสารที่ใช้'}</span>}
+            </div>
+            {old.length > 0 && <details style={{ marginTop: 6 }}><summary className="label" style={{ cursor: 'pointer' }}>เอกสารเก่าที่ไม่ใช้แล้ว ({old.length})</summary>
+              {old.map(d => <div key={d.id} style={{ marginTop: 4 }}><button className="btn ghost sm" style={{ opacity: .7 }} onClick={() => openPrivate('signed-docs', d.pdf_path)}>{d.doc_type === 'loan_contract' ? 'สัญญา (ระบบเดิม)' : 'ใบยินยอมหัก (ก่อนอนุมัติยอด)'}</button> <span className="label">{dateTimeTH(d.signed_at)}</span></div>)}</details>}
+          </div>;
+        })}
         <div className="row" style={{ justifyContent: 'flex-end' }}><button className="btn" style={{ flex: 'none' }} onClick={() => setView(null)}>ปิด</button></div>
       </div></div>}
     </div>
