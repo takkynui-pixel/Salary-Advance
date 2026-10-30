@@ -14,6 +14,7 @@ async function callInvite(ids: string[], force: boolean): Promise<string> {
     sent += j.sent || 0; if (j.reason) reason = j.reason; if (j.error && !reason) reason = j.error;
   }
   if (sent > 0) return `ส่งอีเมลแจ้งพนักงานแล้ว ${sent} คน`;
+  if (reason === 'service key invalid') return 'ส่งอีเมลไม่ได้: SUPABASE_SERVICE_ROLE_KEY ใน Vercel ไม่ถูกต้อง (ต้องเป็นคีย์ service_role / secret ไม่ใช่ anon / publishable) — ไปที่ตั้งค่า > ตรวจสอบระบบอีเมล';
   return reason === 'email not configured' ? 'ยังไม่ได้ตั้งค่าอีเมลของระบบ (ดู README) จึงไม่ได้ส่งอีเมล' : reason === 'nothing to send' ? 'ไม่ได้ส่งอีเมล (พนักงานไม่มีอีเมล หรือเคยส่งแล้ว)' : 'ส่งอีเมลไม่สำเร็จ' + (reason ? ` (${reason})` : '');
 }
 

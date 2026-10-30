@@ -21,6 +21,8 @@ export async function POST(req: Request) {
   if (ids.length === 0) return NextResponse.json({ sent: 0, reason: 'no employees' });
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
+  const probe = await admin.rpc('staff_notify_emails');
+  if (probe.error) return NextResponse.json({ sent: 0, reason: 'service key invalid' });
   const { data: emps } = await admin.from('employees').select('id, email, full_name, emp_code, invited_at, active').in('id', ids);
   const todo = (emps || []).filter((e: any) => e.email && e.active && (force || !e.invited_at));
   if (todo.length === 0) return NextResponse.json({ sent: 0, reason: 'nothing to send' });

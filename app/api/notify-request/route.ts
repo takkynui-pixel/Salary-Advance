@@ -38,6 +38,8 @@ export async function POST(req: Request) {
   }
 
   const admin = createClient(url, service, { auth: { persistSession: false } });
+  const probe = await admin.rpc('staff_notify_emails');
+  if (probe.error) { console.error('notify-request: SUPABASE_SERVICE_ROLE_KEY is not a valid service key:', probe.error.message); return NextResponse.json({ sent: 0, reason: 'service key invalid' }); }
   // claim the notification so it is sent once
   const { data: claimed } = await admin.from('advance_requests').update({ notified_at: new Date().toISOString() })
     .eq('id', requestId).is('notified_at', null).select('id');

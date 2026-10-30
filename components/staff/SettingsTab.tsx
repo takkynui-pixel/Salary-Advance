@@ -9,6 +9,8 @@ export default function SettingsTab() {
   const [inv, setInv] = useState<any[]>([]);
   const [email, setEmail] = useState(''); const [role, setRole] = useState('hr');
   const [msg, setMsg] = useState<{ t: 'ok' | 'err'; s: string } | null>(null);
+  const [chk, setChk] = useState<Record<string, string> | null>(null);
+  const [chkBusy, setChkBusy] = useState(false);
 
   const load = async () => {
     const { data } = await supabase.from('app_settings').select('key,value'); setS(Object.fromEntries((data || []).map((r: any) => [r.key, String(r.value)])));
@@ -23,6 +25,12 @@ export default function SettingsTab() {
       if (error) { setMsg({ t: 'err', s: error.message }); return; }
     }
     setMsg({ t: 'ok', s: 'บันทึกแล้ว (มีผลกับคำขอใหม่ คำขอเดิมใช้ค่าตอนที่ขอ)' });
+  }
+  async function checkMail() {
+    setChkBusy(true); setChk(null);
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const res = await fetch('/api/mail-check', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    setChk(res.ok ? await res.json() : { error: 'ตรวจสอบไม่ได้ (' + res.status + ')' }); setChkBusy(false);
   }
   async function addInvite() {
     const e = email.trim().toLowerCase(); if (!e) return;
@@ -40,6 +48,12 @@ export default function SettingsTab() {
 
   return (
     <div className="grid g2">
+      <div className="card" style={{ gridColumn: '1 / -1' }}>
+        <h2>ตรวจสอบระบบอีเมล</h2>
+        <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ · อีเมล OTP ตอนล็อกอินส่งโดย Supabase ต้องตั้ง SMTP ใน Supabase แยกต่างหาก (ดู README)</p>
+        <button className="btn" onClick={checkMail} disabled={chkBusy}>{chkBusy ? 'กำลังตรวจสอบ...' : 'ตรวจสอบและส่งอีเมลทดสอบ'}</button>
+        {chk && <table style={{ marginTop: 12 }}><tbody>{Object.entries(chk).map(([k, v]) => <tr key={k}><td style={{ whiteSpace: 'nowrap' }}><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>}
+      </div>
       <div className="card">
         <h2>อัตราและเงื่อนไข</h2>
         {Object.keys(LABELS).map(k => <div className="field" key={k}><label>{LABELS[k]}</label><input type="number" step="0.01" value={s[k] ?? ''} onChange={e => setS({ ...s, [k]: e.target.value })} /></div>)}
