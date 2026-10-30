@@ -99,7 +99,6 @@ export default function ProfileForm({ emp, initial, marketing, onSaved }: {
           <T label="ที่อยู่ที่ทำงาน" v={p.workAddress} on={str('workAddress')} /><T label="รหัสไปรษณีย์ที่ทำงาน" v={p.workPostal} on={str('workPostal')} /><T label="เบอร์ที่ทำงาน" v={p.workPhone} on={str('workPhone')} />
         </div>
         <div className="row">
-          <T label="ผู้บังคับบัญชา (ชื่อ-สกุล)" v={p.supName} on={str('supName')} /><T label="เบอร์ผู้บังคับบัญชา" v={p.supPhone} on={str('supPhone')} />
           <T label="อายุงานปัจจุบัน (ปี)" v={p.yearsHere} on={str('yearsHere')} /><T label="เงินเดือน/รายได้ต่อเดือน (บาท)" v={p.salary} on={str('salary')} />
         </div>
       </div>

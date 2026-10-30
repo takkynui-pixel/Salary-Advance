@@ -17,7 +17,7 @@ export default function Me() {
   const [period, setPeriod] = useState<any>(null);
   const [days, setDays] = useState(0);
   const [avail, setAvail] = useState(0);
-  const [settings, setSettings] = useState({ limit_pct: 0.7, fee_rate: 0.03, transfer_fee: 15 });
+  const [settings, setSettings] = useState({ limit_pct: 0.7, fee_rate: 0.03, transfer_fee: 15, min_request: 1000 });
   const [reqs, setReqs] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
   const [profile, setProfile] = useState<LoanProfile>(emptyProfile);
@@ -60,18 +60,18 @@ export default function Me() {
   const fees = useMemo(() => calcFee(num, settings.fee_rate, settings.transfer_fee), [num, settings]);
   const gross = Math.round((employee?.daily_wage ?? 0) * days * settings.limit_pct * 100) / 100;
   const used = Math.max(0, gross - avail);
-  const unsigned = reqs.filter(r => r.status === 'pending_hr' && !docs.some(d => d.request_id === r.id));
+  const toSign = reqs.filter(r => r.status === 'pending_sign');
+  const latestDoc = (id: string) => docs.filter(d => d.request_id === id && d.doc_type === 'deduction_consent').sort((a, b) => (a.signed_at < b.signed_at ? 1 : -1))[0];
 
   async function submit() {
     setMsg(null);
     if (!complete || !hasAllFiles) { setMsg({ t: 'err', s: 'กรุณากรอกข้อมูลส่วนตัวและอัปโหลดเอกสารแนบให้ครบก่อน (แท็บ "ข้อมูลของฉัน")' }); return; }
-    if (num <= 0) { setMsg({ t: 'err', s: 'กรอกยอดที่ต้องการเบิก' }); return; }
-    if (num > avail) { setMsg({ t: 'err', s: 'ยอดเบิกเกินวงเงินคงเหลือ' }); return; }
+    if (num < settings.min_request) { setMsg({ t: 'err', s: `ยอดขอเบิกขั้นต่ำ ${baht(settings.min_request)} บาท` }); return; }
     setBusy(true);
-    const { data, error } = await supabase.rpc('request_advance', { p_amount: num });
+    const { error } = await supabase.rpc('request_advance', { p_amount: num });
     setBusy(false);
     if (error) { setMsg({ t: 'err', s: error.message }); return; }
-    setAmount(''); await load(); setSigning(data as Req);
+    setAmount(''); setMsg({ t: 'ok', s: 'ส่งคำขอแล้ว HR จะตรวจสอบวันทำงานและกำหนดยอดที่อนุมัติ จากนั้นระบบจะให้คุณเซ็นใบยินยอมให้หักเงิน' }); await load();
   }
   async function cancel(id: string) {
     if (!confirm('ยกเลิกคำขอนี้?')) return;
@@ -92,9 +92,9 @@ export default function Me() {
           <p className="sub">{period ? `รอบ ${period.label} · ${dateTH(period.start_date)} – ${dateTH(period.end_date)}` : 'ยังไม่เปิดรอบการเบิก'}</p>
           <div className="grid g3" style={{ marginBottom: 16 }}>
             <div className="card hero">
-              <div className="sub">วงเงินที่เบิกได้ตอนนี้</div>
+              <div className="sub">วงเงินโดยประมาณตอนนี้</div>
               <div className="big">{baht(avail)}</div>
-              <div className="sub" style={{ margin: '8px 0 0' }}>บาท · {settings.limit_pct * 100}% ของค่าจ้างที่ทำได้แล้ว</div>
+              <div className="sub" style={{ margin: '8px 0 0' }}>บาท · {settings.limit_pct * 100}% ของค่าจ้างที่ทำได้แล้ว (HR เป็นผู้ยืนยันยอดอนุมัติ)</div>
             </div>
             <div className="card">
               <div className="label">วันทำงานสะสมในรอบ</div><div className="big" style={{ fontSize: 36 }}>{days}</div>
@@ -102,7 +102,7 @@ export default function Me() {
               <div className="label">วงเงินรวม {baht(gross)} · ใช้ไปแล้ว {baht(used)}</div>
             </div>
             <div className="card">
-              <div className="label">ค่าบริการ</div><div className="big" style={{ fontSize: 36 }}>{settings.fee_rate * 100}%</div>
+              <div className="label">ค่าธรรมเนียม</div><div className="big" style={{ fontSize: 36 }}>{settings.fee_rate * 100}%</div>
               <div className="label" style={{ marginTop: 8 }}>+ ค่าโอน {baht(settings.transfer_fee)} บาทต่อครั้ง</div>
               <div className="label">หักจากเงินเดือนในรอบจ่ายถัดไป</div>
             </div>
@@ -110,21 +110,22 @@ export default function Me() {
 
           {(!complete || !hasAllFiles) && ready && <div className="msg inf">ก่อนเบิกครั้งแรก กรุณากรอกข้อมูลส่วนตัว ({complete ? 'ครบแล้ว' : 'ยังไม่ครบ'}) และอัปโหลดเอกสารแนบ 3 รายการ ({hasAllFiles ? 'ครบแล้ว' : 'ยังไม่ครบ'}) ที่แท็บ "ข้อมูลของฉัน"
             <div style={{ marginTop: 8 }}><button className="btn sm" onClick={() => setTab('profile')}>ไปกรอกข้อมูล</button></div></div>}
-          {unsigned.length > 0 && <div className="msg err">มีคำขอที่ยังไม่ได้เซ็นเอกสาร HR จะยังไม่เห็นคำขอนี้จนกว่าจะเซ็น
-            <div style={{ marginTop: 8 }}><button className="btn sm" onClick={() => setSigning(unsigned[0])}>เซ็นเอกสารตอนนี้</button></div></div>}
+          {toSign.length > 0 && <div className="msg err">HR อนุมัติคำขอของคุณแล้ว กรุณาเซ็นใบยินยอมให้หักเงิน เพื่อให้การเงินโอนเงินได้
+            {toSign.map(r => <div key={r.id} style={{ marginTop: 8 }}>อนุมัติ <b>{baht(r.amount)}</b> บาท (ยอดหัก {baht(r.total_deduct)}) <button className="btn sm" style={{ marginLeft: 8 }} onClick={() => setSigning(r)}>เซ็นเอกสาร</button></div>)}</div>}
 
           <div className="card" style={{ maxWidth: 560 }}>
             <h2>ขอเบิกเงินล่วงหน้า</h2>
-            <div className="field"><label htmlFor="amt">จำนวนที่ต้องการเบิก (บาท)</label>
-              <input id="amt" type="number" inputMode="decimal" min="1" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`ไม่เกิน ${baht(avail)}`} disabled={!period} /></div>
+            <div className="field"><label htmlFor="amt">จำนวนที่ต้องการเบิก (บาท) · ขั้นต่ำ {baht(settings.min_request)}</label>
+              <input id="amt" type="number" inputMode="decimal" min="1" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`ขั้นต่ำ ${baht(settings.min_request)}`} disabled={!period} /></div>
             {num > 0 && <table><tbody>
-              <tr><td>ยอดที่ได้รับโอน</td><td className="right">{baht(num)}</td></tr>
-              <tr><td>ค่าบริการ {settings.fee_rate * 100}%</td><td className="right">{baht(fees.fee)}</td></tr>
+              <tr><td>ยอดที่ขอเบิก</td><td className="right">{baht(num)}</td></tr>
+              <tr><td>ค่าธรรมเนียม {settings.fee_rate * 100}%</td><td className="right">{baht(fees.fee)}</td></tr>
               <tr><td>ค่าโอน</td><td className="right">{baht(fees.transferFee)}</td></tr>
-              <tr><td><b>ยอดที่จะถูกหักจากเงินเดือน</b></td><td className="right"><b>{baht(fees.total)}</b></td></tr>
+              <tr><td><b>ยอดที่จะถูกหัก (ประมาณการ)</b></td><td className="right"><b>{baht(fees.total)}</b></td></tr>
             </tbody></table>}
+            {num > 0 && <p className="label">ยอดที่ได้รับจริงเป็นไปตามที่ HR อนุมัติ ค่าธรรมเนียมจะคิดใหม่ตามยอดอนุมัติ</p>}
             {msg && <div className={'msg ' + (msg.t === 'ok' ? 'okm' : 'err')} role="status">{msg.s}</div>}
-            <button className="btn" style={{ marginTop: 12 }} onClick={submit} disabled={busy || !period || avail <= 0}>{busy ? 'กำลังส่งคำขอ...' : 'ขอเบิกและเซ็นเอกสาร'}</button>
+            <button className="btn" style={{ marginTop: 12 }} onClick={submit} disabled={busy || !period}>{busy ? 'กำลังส่งคำขอ...' : 'ส่งคำขอเบิก'}</button>
           </div>
         </>}
 
@@ -132,16 +133,16 @@ export default function Me() {
           <div className="card tablewrap">
             <h2>ประวัติการเบิก</h2>
             {reqs.length === 0 ? <p className="sub">ยังไม่มีรายการเบิก</p> : (
-              <table><thead><tr><th>วันที่</th><th>รอบ</th><th className="right">ยอดเบิก</th><th className="right">ยอดหัก</th><th>สถานะ</th><th>เอกสาร</th><th></th></tr></thead><tbody>
+              <table><thead><tr><th>วันที่</th><th>รอบ</th><th className="right">ยอดที่ขอ</th><th className="right">ยอดอนุมัติ</th><th className="right">ยอดหัก</th><th>สถานะ</th><th>เอกสาร</th><th></th></tr></thead><tbody>
                 {reqs.map(r => {
-                  const rd = docs.filter(d => d.request_id === r.id);
+                  const ld = latestDoc(r.id);
                   return <tr key={r.id}>
                     <td>{dateTimeTH(r.created_at)}</td><td>{r.pay_periods?.label}</td>
-                    <td className="right">{baht(r.amount)}</td><td className="right">{baht(r.total_deduct)}</td>
+                    <td className="right">{baht(r.requested_amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.total_deduct)}</td>
                     <td><span className={'badge ' + STATUS_TONE[r.status]}>{STATUS_TH[r.status]}</span>{r.hr_note ? <div className="label">{r.hr_note}</div> : null}</td>
-                    <td>{rd.map(d => <button key={d.id} className="btn ghost sm" style={{ marginRight: 6 }} onClick={() => openPrivate('signed-docs', d.pdf_path)}>{d.doc_type === 'loan_contract' ? 'สัญญา' : 'ใบยินยอมหัก'}</button>)}
-                      {rd.length === 0 && r.status === 'pending_hr' && <button className="btn sm" onClick={() => setSigning(r)}>เซ็นเอกสาร</button>}</td>
-                    <td>{r.status === 'pending_hr' && <button className="btn danger sm" onClick={() => cancel(r.id)}>ยกเลิก</button>}</td>
+                    <td>{ld && ['approved', 'transferred', 'deducted'].includes(r.status) && <button className="btn ghost sm" onClick={() => openPrivate('signed-docs', ld.pdf_path)}>ใบยินยอมหัก</button>}
+                      {r.status === 'pending_sign' && <button className="btn sm" onClick={() => setSigning(r)}>เซ็นเอกสาร</button>}</td>
+                    <td>{(r.status === 'pending_hr' || r.status === 'pending_sign') && <button className="btn danger sm" onClick={() => cancel(r.id)}>ยกเลิก</button>}</td>
                   </tr>;
                 })}
               </tbody></table>)}
@@ -154,8 +155,8 @@ export default function Me() {
           <Uploads employeeId={employee.id} onChange={setFiles} />
         </>}
 
-        {signing && <SignDialog emp={employee} req={signing} profile={profile} marketing={marketing} email={session!.user.email!}
-          onClose={() => setSigning(null)} onDone={() => { setSigning(null); setMsg({ t: 'ok', s: 'ส่งคำขอและเซ็นเอกสารเรียบร้อย รอ HR อนุมัติ' }); setTab('home'); load(); }} />}
+        {signing && <SignDialog emp={employee} req={signing} email={session!.user.email!}
+          onClose={() => setSigning(null)} onDone={() => { setSigning(null); setMsg({ t: 'ok', s: 'เซ็นเอกสารเรียบร้อย รอการเงินโอนเงิน' }); setTab('home'); load(); }} />}
       </>}
     </Shell>
   );

@@ -10,11 +10,11 @@ export const dateTimeTH = (d?: string | null) =>
   d ? new Date(d).toLocaleString('th-TH', { day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
 
 export const STATUS_TH: Record<string, string> = {
-  pending_hr: 'รอ HR อนุมัติ', approved: 'อนุมัติแล้ว รอโอน', rejected: 'ไม่อนุมัติ',
+  pending_hr: 'รอ HR อนุมัติยอด', pending_sign: 'อนุมัติแล้ว รอเซ็นเอกสาร', approved: 'อนุมัติแล้ว รอโอน', rejected: 'ไม่อนุมัติ',
   transferred: 'โอนแล้ว', deducted: 'หักเงินแล้ว', cancelled: 'ยกเลิก',
 };
 export const STATUS_TONE: Record<string, string> = {
-  pending_hr: 'warn', approved: 'info', rejected: 'bad', transferred: 'ok', deducted: 'mute', cancelled: 'mute',
+  pending_hr: 'warn', pending_sign: 'info', approved: 'info', rejected: 'bad', transferred: 'ok', deducted: 'mute', cancelled: 'mute',
 };
 
 export function calcFee(amount: number, feeRate: number, transferFee: number) {

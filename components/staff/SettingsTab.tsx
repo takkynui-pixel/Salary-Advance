@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 
-const LABELS: Record<string, string> = { limit_pct: 'สัดส่วนวงเงิน (0.70 = 70%)', fee_rate: 'ค่าบริการ (0.03 = 3%)', transfer_fee: 'ค่าโอนต่อครั้ง (บาท)' };
+const LABELS: Record<string, string> = { limit_pct: 'สัดส่วนวงเงิน (0.70 = 70%)', fee_rate: 'ค่าธรรมเนียม (0.03 = 3%)', transfer_fee: 'ค่าโอนต่อครั้ง (บาท)', min_request: 'ยอดขอเบิกขั้นต่ำต่อครั้ง (บาท)' };
 
 export default function SettingsTab() {
   const [s, setS] = useState<Record<string, string>>({});
