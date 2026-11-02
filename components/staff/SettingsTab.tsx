@@ -68,7 +68,7 @@ export default function SettingsTab() {
     <div className="grid g2">
       <div className="card" style={{ gridColumn: '1 / -1' }}>
         <h2>ตรวจสอบระบบอีเมล</h2>
-        <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ · อีเมล OTP ตอนล็อกอินส่งโดย Supabase ต้องตั้ง SMTP ใน Supabase แยกต่างหาก (ดู README)</p>
+        <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ</p>
         <button className="btn" onClick={checkMail} disabled={chkBusy}>{chkBusy ? 'กำลังตรวจสอบ...' : 'ตรวจสอบและส่งอีเมลทดสอบ'}</button>
         {chk && <table style={{ marginTop: 12 }}><tbody>{Object.entries(chk).map(([k, v]) => <tr key={k}><td style={{ whiteSpace: 'nowrap' }}><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>}
       </div>
