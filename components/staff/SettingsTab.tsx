@@ -32,14 +32,32 @@ export default function SettingsTab() {
     const res = await fetch('/api/mail-check', { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     setChk(res.ok ? await res.json() : { error: 'ตรวจสอบไม่ได้ (' + res.status + ')' }); setChkBusy(false);
   }
+  async function callStaffMail(addr: string): Promise<string> {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const res = await fetch('/api/notify-staff', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify({ email: addr }) });
+    const j = await res.json().catch(() => ({}));
+    if (j.sent > 0) return `ส่งอีเมลแจ้งสิทธิ์ไปที่ ${addr} แล้ว`;
+    if (j.reason === 'email not configured') return 'ยังไม่ได้ตั้งค่าอีเมลของระบบ จึงไม่ได้ส่งอีเมล (ดู README)';
+    if (j.reason === 'service key invalid') return 'ส่งอีเมลไม่ได้: SUPABASE_SERVICE_ROLE_KEY ไม่ถูกต้อง (ใช้ปุ่มตรวจสอบระบบอีเมลด้านบน)';
+    return 'ส่งอีเมลไม่สำเร็จ' + (j.reason ? ` (${j.reason})` : '');
+  }
   async function addInvite() {
     const e = email.trim().toLowerCase(); if (!e) return;
-    const { error } = await supabase.from('staff_invites').upsert({ email: e, role });
+    const { error } = await supabase.from('staff_invites').upsert({ email: e, role, notify_requests: role !== 'admin' });
     if (error) { setMsg({ t: 'err', s: error.message }); return; }
     // if the user already signed in before, promote immediately
     const { data: u } = await supabase.from('profiles').select('user_id').eq('display_name', e).maybeSingle();
     if (u) await supabase.from('profiles').update({ role }).eq('user_id', u.user_id);
-    setEmail(''); setMsg({ t: 'ok', s: 'เพิ่มผู้ใช้งานแล้ว ให้เขาล็อกอินด้วยอีเมลนี้' }); load();
+    const note = await callStaffMail(e);
+    setEmail(''); setMsg({ t: 'ok', s: 'เพิ่มผู้ใช้งานแล้ว · ' + note }); load();
+  }
+  async function toggleNotify(i: any) {
+    const { error } = await supabase.from('staff_invites').update({ notify_requests: !i.notify_requests }).eq('email', i.email);
+    if (error) setMsg({ t: 'err', s: error.message }); else { setInv(list => list.map(x => x.email === i.email ? { ...x, notify_requests: !i.notify_requests } : x)); setMsg(null); }
+  }
+  async function resendStaff(addr: string) {
+    if (!confirm('ส่งอีเมลแจ้งสิทธิ์ให้ ' + addr + ' อีกครั้ง?')) return;
+    setMsg({ t: 'ok', s: await callStaffMail(addr) });
   }
   async function removeInvite(e: string) {
     if (!confirm('ลบสิทธิ์ของ ' + e + '? (ผู้ที่ล็อกอินแล้วต้องแก้บทบาทใน Supabase)')) return;
@@ -65,7 +83,11 @@ export default function SettingsTab() {
         <div className="row"><div className="field" style={{ flex: 2 }}><label>อีเมล</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} /></div>
           <div className="field"><label>บทบาท</label><select value={role} onChange={e => setRole(e.target.value)}><option value="hr">HR</option><option value="finance">การเงิน</option><option value="admin">แอดมิน</option></select></div></div>
         <button className="btn" onClick={addInvite}>เพิ่มผู้ใช้งาน</button>
-        <table style={{ marginTop: 12 }}><tbody>{inv.map(i => <tr key={i.email}><td>{i.email}</td><td>{i.role}</td><td className="right"><button className="btn danger sm" onClick={() => removeInvite(i.email)}>ลบ</button></td></tr>)}</tbody></table>
+        <p className="label" style={{ marginTop: 12 }}>ปุ่ม "แจ้งเตือนคำขอเบิก" ควบคุมการส่งอีเมลเมื่อพนักงานขอเบิก (ผู้ใช้ใหม่ได้รับอีเมลแจ้งสิทธิ์เสมอ)</p>
+        <div className="tablewrap"><table><thead><tr><th>อีเมล</th><th>บทบาท</th><th>แจ้งเตือนคำขอเบิก</th><th></th></tr></thead><tbody>{inv.map(i => <tr key={i.email}>
+          <td>{i.email}</td><td>{i.role}</td>
+          <td><button type="button" className={'pill' + (i.notify_requests ? ' active' : '')} role="switch" aria-checked={!!i.notify_requests} aria-label={'แจ้งเตือนคำขอเบิกทางอีเมล ' + i.email} onClick={() => toggleNotify(i)}>{i.notify_requests ? 'เปิด' : 'ปิด'}</button></td>
+          <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn ghost sm" onClick={() => resendStaff(i.email)}>ส่งอีเมลสิทธิ์อีกครั้ง</button> <button className="btn danger sm" onClick={() => removeInvite(i.email)}>ลบ</button></td></tr>)}</tbody></table></div>
       </div>
     </div>
   );
