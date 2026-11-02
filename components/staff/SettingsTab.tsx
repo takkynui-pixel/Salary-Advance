@@ -70,7 +70,7 @@ export default function SettingsTab() {
         <h2>ตรวจสอบระบบอีเมล</h2>
         <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ</p>
         <button className="btn" onClick={checkMail} disabled={chkBusy}>{chkBusy ? 'กำลังตรวจสอบ...' : 'ตรวจสอบและส่งอีเมลทดสอบ'}</button>
-        {chk && <table style={{ marginTop: 12 }}><tbody>{Object.entries(chk).map(([k, v]) => <tr key={k}><td style={{ whiteSpace: 'nowrap' }}><b>{k}</b></td><td>{v}</td></tr>)}</tbody></table>}
+        {chk && <div className="kvlist">{Object.entries(chk).map(([k, v]) => <div className="kvrow" key={k}><div className="label">{k}</div><div>{v}</div></div>)}</div>}
       </div>
       <div className="card">
         <h2>อัตราและเงื่อนไข</h2>
@@ -84,10 +84,13 @@ export default function SettingsTab() {
           <div className="field"><label>บทบาท</label><select value={role} onChange={e => setRole(e.target.value)}><option value="hr">HR</option><option value="finance">การเงิน</option><option value="admin">แอดมิน</option></select></div></div>
         <button className="btn" onClick={addInvite}>เพิ่มผู้ใช้งาน</button>
         <p className="label" style={{ marginTop: 12 }}>ปุ่ม "แจ้งเตือนคำขอเบิก" ควบคุมการส่งอีเมลเมื่อพนักงานขอเบิก (ผู้ใช้ใหม่ได้รับอีเมลแจ้งสิทธิ์เสมอ)</p>
-        <div className="tablewrap"><table><thead><tr><th>อีเมล</th><th>บทบาท</th><th>แจ้งเตือนคำขอเบิก</th><th></th></tr></thead><tbody>{inv.map(i => <tr key={i.email}>
-          <td>{i.email}</td><td>{i.role}</td>
-          <td><button type="button" className={'pill' + (i.notify_requests ? ' active' : '')} role="switch" aria-checked={!!i.notify_requests} aria-label={'แจ้งเตือนคำขอเบิกทางอีเมล ' + i.email} onClick={() => toggleNotify(i)}>{i.notify_requests ? 'เปิด' : 'ปิด'}</button></td>
-          <td className="right" style={{ whiteSpace: 'nowrap' }}><button className="btn ghost sm" onClick={() => resendStaff(i.email)}>ส่งอีเมลสิทธิ์อีกครั้ง</button> <button className="btn danger sm" onClick={() => removeInvite(i.email)}>ลบ</button></td></tr>)}</tbody></table></div>
+        <div className="stafflist">{inv.map(i => <div className="staffrow" key={i.email}>
+          <div className="who"><b>{i.email}</b><span className="badge mute">{i.role}</span></div>
+          <div className="acts">
+            <button type="button" className={'pill' + (i.notify_requests ? ' active' : '')} role="switch" aria-checked={!!i.notify_requests} aria-label={'แจ้งเตือนคำขอเบิกทางอีเมล ' + i.email} onClick={() => toggleNotify(i)}>แจ้งเตือนคำขอเบิก: {i.notify_requests ? 'เปิด' : 'ปิด'}</button>
+            <button className="btn ghost sm" onClick={() => resendStaff(i.email)}>ส่งอีเมลสิทธิ์อีกครั้ง</button>
+            <button className="btn danger sm" onClick={() => removeInvite(i.email)}>ลบ</button>
+          </div></div>)}</div>
       </div>
     </div>
   );
