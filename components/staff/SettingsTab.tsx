@@ -43,13 +43,17 @@ export default function SettingsTab() {
   }
   async function addInvite() {
     const e = email.trim().toLowerCase(); if (!e) return;
-    const { error } = await supabase.from('staff_invites').upsert({ email: e, role, notify_requests: role !== 'admin' });
+    const { data: existing } = await supabase.from('staff_invites').select('email').eq('email', e).maybeSingle();
+    // a user who is already on the list keeps their notification switch; only a brand-new user gets the default
+    const { error } = existing
+      ? await supabase.from('staff_invites').update({ role }).eq('email', e)
+      : await supabase.from('staff_invites').insert({ email: e, role, notify_requests: role !== 'admin' });
     if (error) { setMsg({ t: 'err', s: error.message }); return; }
     // if the user already signed in before, promote immediately
     const { data: u } = await supabase.from('profiles').select('user_id').eq('display_name', e).maybeSingle();
     if (u) await supabase.from('profiles').update({ role }).eq('user_id', u.user_id);
     const note = await callStaffMail(e);
-    setEmail(''); setMsg({ t: 'ok', s: 'เพิ่มผู้ใช้งานแล้ว · ' + note }); load();
+    setEmail(''); setMsg({ t: 'ok', s: (existing ? 'อัปเดตบทบาทแล้ว (คงการตั้งค่าแจ้งเตือนเดิมไว้) · ' : 'เพิ่มผู้ใช้งานแล้ว · ') + note }); load();
   }
   async function toggleNotify(i: any) {
     const { error } = await supabase.from('staff_invites').update({ notify_requests: !i.notify_requests }).eq('email', i.email);
@@ -68,7 +72,7 @@ export default function SettingsTab() {
     <div className="grid g2">
       <div className="card" style={{ gridColumn: '1 / -1' }}>
         <h2>ตรวจสอบระบบอีเมล</h2>
-        <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ</p>
+        <p className="sub">ทดสอบอีเมลของระบบ (แจ้งคำขอเบิก / เชิญพนักงาน) โดยส่งอีเมลทดสอบถึงอีเมลของคุณ · อีเมล OTP ตอนล็อกอินส่งโดย Supabase ต้องตั้ง SMTP ใน Supabase แยกต่างหาก (ดู README)</p>
         <button className="btn" onClick={checkMail} disabled={chkBusy}>{chkBusy ? 'กำลังตรวจสอบ...' : 'ตรวจสอบและส่งอีเมลทดสอบ'}</button>
         {chk && <div className="kvlist">{Object.entries(chk).map(([k, v]) => <div className="kvrow" key={k}><div className="label">{k}</div><div>{v}</div></div>)}</div>}
       </div>

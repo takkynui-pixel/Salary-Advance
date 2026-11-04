@@ -23,7 +23,8 @@ export async function POST(req: Request) {
   if (service) {
     const admin = createClient(url, service, { auth: { persistSession: false } });
     const probe = await admin.rpc('staff_notify_emails');
-    out.service_key = probe.error ? 'ไม่ถูกต้อง — ต้องเป็นคีย์ service_role / secret (ตอนนี้ใช้คีย์ที่สิทธิ์ไม่พอ เช่น anon/publishable)' : `ถูกต้อง · ผู้รับแจ้งคำขอเบิก (HR/การเงิน) ${probe.data?.length ?? 0} อีเมล`;
+    out.service_key = probe.error ? 'ไม่ถูกต้อง — ต้องเป็นคีย์ service_role / secret (ตอนนี้ใช้คีย์ที่สิทธิ์ไม่พอ เช่น anon/publishable)' : `ถูกต้อง`;
+    if (!probe.error) out.recipients = (probe.data || []).length ? `${probe.data.length} อีเมล: ` + probe.data.map((x: any) => x.email).join(', ') : 'ไม่มี (ไม่มีใครเปิดแจ้งเตือนคำขอเบิก)';
   } else out.service_key = 'ข้าม (ยังไม่ได้ตั้งคีย์)';
   if (resendKey && from && me) {
     const res = await fetch('https://api.resend.com/emails', {

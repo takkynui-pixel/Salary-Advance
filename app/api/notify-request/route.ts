@@ -47,7 +47,6 @@ export async function POST(req: Request) {
 
   const { data: staff } = await admin.rpc('staff_notify_emails');
   const set = new Set<string>((staff || []).map((s: any) => String(s.email).toLowerCase()));
-  (process.env.NOTIFY_EXTRA_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean).forEach(e => set.add(e));
   const recipients = Array.from(set);
   if (recipients.length === 0) return NextResponse.json({ sent: 0, reason: 'no recipients' });
 
@@ -64,10 +63,11 @@ export async function POST(req: Request) {
     </table>
     <p style="margin:16px 0">HR กรุณาตรวจสอบวันทำงานและระบุยอดที่อนุมัติ จากนั้นพนักงานจะเซ็นใบยินยอมให้หักเงิน และฝ่ายการเงินจะได้รับรายการรอโอน</p>
     <p><a href="${esc(origin)}/staff" style="background:#1f5fe0;color:#fff;padding:10px 20px;border-radius:999px;text-decoration:none">เปิดระบบ</a></p>
-    <p style="font-size:12px;color:#6b7896;margin-top:20px">บริษัท วีทีเอ เซอร์วิส จำกัด · อีเมลนี้ส่งอัตโนมัติ</p></div>`;
+    <p style="font-size:12px;color:#6b7896;margin-top:20px">บริษัท วีทีเอ เซอร์วิส จำกัด · อีเมลนี้ส่งอัตโนมัติ<br>คุณได้รับอีเมลนี้เพราะเปิด "แจ้งเตือนคำขอเบิก" ไว้ที่เมนูตั้งค่า → ผู้ใช้งานฝั่งบริษัท (ปิดได้โดยแอดมิน)</p></div>`;
 
   const r2 = await sendBatch(recipients.map(to => ({ to, subject, html })));
   const ok = r2.ok;
   if (ok === 0) await admin.from('advance_requests').update({ notified_at: null }).eq('id', requestId);
+  await admin.from('audit_log').insert({ action: 'notify_request_sent', table_name: 'advance_requests', record_id: requestId, detail: { recipients, sent: ok, failed: r2.failed } });
   return NextResponse.json({ sent: ok, total: recipients.length });
 }
