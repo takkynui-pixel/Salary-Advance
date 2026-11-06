@@ -9,12 +9,36 @@ import SignDialog, { Req } from '@/components/SignDialog';
 import { LoanProfile, emptyProfile } from '@/lib/loanTypes';
 import { baht, calcFee, dateTH, dateTimeTH, STATUS_TH, STATUS_TONE } from '@/lib/format';
 
+const WIN_MSG: Record<string, string> = {
+  no_company: 'ยังไม่ได้กำหนดบริษัทของคุณในระบบ กรุณาติดต่อ HR',
+  no_period: 'บริษัทของคุณยังไม่เปิดรอบการเบิก',
+  no_employee: 'ยังไม่พบข้อมูลพนักงาน',
+};
+function WindowCard({ win }: { win: any }) {
+  if (!win) return null;
+  const st: string = win.state;
+  const range = win.window_start || win.window_end
+    ? `${win.window_start ? dateTH(win.window_start) : 'ตอนนี้'} – ${win.window_end ? dateTH(win.window_end) : 'ไม่กำหนดวันสิ้นสุด'}` : 'ไม่จำกัดวัน';
+  const tone = st === 'open' ? 'okm' : st === 'not_yet' ? 'inf' : 'err';
+  let head = WIN_MSG[st] || '';
+  if (st === 'open') head = win.days_left != null ? `เปิดรับคำขอเบิกอยู่ — เหลืออีก ${win.days_left} วัน (รวมวันนี้)` : 'เปิดรับคำขอเบิกอยู่';
+  if (st === 'not_yet') head = `ยังไม่ถึงช่วงเบิก — เปิดรับคำขอวันที่ ${dateTH(win.window_start)}`;
+  if (st === 'ended') head = `หมดช่วงเบิกแล้ว (ปิดรับเมื่อ ${dateTH(win.window_end)}) — รอรอบถัดไป`;
+  if (st === 'closed') head = 'ช่วงเบิกถูกปิดแล้ว — รอประกาศเปิดรอบถัดไป';
+  return (
+    <div className={'msg ' + tone} style={{ marginBottom: 16 }} role="status">
+      <b>{head}</b>
+      {win.label && <div style={{ marginTop: 4, fontSize: 13 }}>{win.company} · รอบ {win.label} · ช่วงเบิก {range} · จ่ายเงินเดือน {dateTH(win.pay_date)}</div>}
+    </div>
+  );
+}
+
 const TABS = [{ key: 'home', label: 'ภาพรวม' }, { key: 'history', label: 'ประวัติ' }, { key: 'profile', label: 'ข้อมูลของฉัน' }];
 
 export default function Me() {
   const { employee, session } = useAuth();
   const [tab, setTab] = useState('home');
-  const [period, setPeriod] = useState<any>(null);
+  const [win, setWin] = useState<any>(null);   // request window of my company (from the server)
   const [days, setDays] = useState(0);
   const [avail, setAvail] = useState(0);
   const [settings, setSettings] = useState({ limit_pct: 0.7, fee_rate: 0.03, transfer_fee: 15, min_request: 1000 });
@@ -32,13 +56,13 @@ export default function Me() {
 
   const load = useCallback(async () => {
     if (!employee) return;
-    const [{ data: per }, { data: st }, { data: rq }, { data: la }] = await Promise.all([
-      supabase.from('pay_periods').select('*').eq('status', 'open').order('start_date', { ascending: false }).limit(1),
+    const [{ data: w }, { data: st }, { data: rq }, { data: la }] = await Promise.all([
+      supabase.rpc('my_request_window'),
       supabase.from('app_settings').select('key,value'),
       supabase.from('advance_requests').select('*, pay_periods(label)').eq('employee_id', employee.id).order('created_at', { ascending: false }),
       supabase.from('loan_applications').select('*').eq('employee_id', employee.id).maybeSingle(),
     ]);
-    const p = per?.[0] ?? null; setPeriod(p);
+    const p = w?.period_id ? { id: w.period_id as string } : null; setWin(w || null);
     if (st) setSettings(Object.fromEntries(st.map((s: any) => [s.key, Number(s.value)])) as any);
     setReqs(rq || []);
     if (la) { setProfile({ ...emptyProfile, ...(la.data as LoanProfile), reg: { ...emptyProfile.reg, ...(la.data as any)?.reg }, cur: { ...emptyProfile.cur, ...(la.data as any)?.cur }, exp: { ...emptyProfile.exp, ...(la.data as any)?.exp } }); setMarketing(!!la.marketing_consent); }
@@ -95,7 +119,7 @@ export default function Me() {
       ) : <>
         <h1 className="hello">{greet}, {first}!</h1>
         {tab === 'home' && <>
-          <p className="sub">{period ? `รอบ ${period.label} · ${dateTH(period.start_date)} – ${dateTH(period.end_date)}` : 'ยังไม่เปิดรอบการเบิก'}</p>
+          <WindowCard win={win} />
           <div className="grid g3" style={{ marginBottom: 16 }}>
             <div className="card hero">
               <div className="sub">วงเงินโดยประมาณตอนนี้</div>
@@ -122,7 +146,7 @@ export default function Me() {
           <div className="card" style={{ maxWidth: 560 }}>
             <h2>ขอเบิกเงินล่วงหน้า</h2>
             <div className="field"><label htmlFor="amt">จำนวนที่ต้องการเบิก (บาท) · ขั้นต่ำ {baht(settings.min_request)}</label>
-              <input id="amt" type="number" inputMode="decimal" min="1" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`ขั้นต่ำ ${baht(settings.min_request)}`} disabled={!period} /></div>
+              <input id="amt" type="number" inputMode="decimal" min="1" step="1" value={amount} onChange={e => setAmount(e.target.value)} placeholder={`ขั้นต่ำ ${baht(settings.min_request)}`} disabled={!win?.can_request} /></div>
             {num > 0 && <table><tbody>
               <tr><td>ยอดที่ขอเบิก</td><td className="right">{baht(num)}</td></tr>
               <tr><td>ค่าธรรมเนียม {settings.fee_rate * 100}%</td><td className="right">{baht(fees.fee)}</td></tr>
@@ -131,7 +155,7 @@ export default function Me() {
             </tbody></table>}
             {num > 0 && <p className="label">ยอดที่ได้รับจริงเป็นไปตามที่ HR อนุมัติ ค่าธรรมเนียมจะคิดใหม่ตามยอดอนุมัติ</p>}
             {msg && <div className={'msg ' + (msg.t === 'ok' ? 'okm' : 'err')} role="status">{msg.s}</div>}
-            <button className="btn" style={{ marginTop: 12 }} onClick={submit} disabled={busy || !period}>{busy ? 'กำลังส่งคำขอ...' : 'ส่งคำขอเบิก'}</button>
+            <button className="btn" style={{ marginTop: 12 }} onClick={submit} disabled={busy || !win?.can_request}>{busy ? 'กำลังส่งคำขอ...' : win?.can_request ? 'ส่งคำขอเบิก' : 'ยังขอเบิกไม่ได้ในขณะนี้'}</button>
           </div>
         </>}
 

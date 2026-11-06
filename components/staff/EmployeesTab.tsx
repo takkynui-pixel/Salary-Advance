@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { baht, parseTable, dateTimeTH, STATUS_TH, STATUS_TONE } from '@/lib/format';
 import { openPrivate } from '../Uploads';
+import { CompanyRow } from '@/lib/cycle';
 
 async function callInvite(ids: string[], force: boolean): Promise<string> {
   const token = (await supabase.auth.getSession()).data.session?.access_token;
@@ -18,12 +19,14 @@ async function callInvite(ids: string[], force: boolean): Promise<string> {
   return reason === 'email not configured' ? 'ยังไม่ได้ตั้งค่าอีเมลของระบบ (ดู README) จึงไม่ได้ส่งอีเมล' : reason === 'nothing to send' ? 'ไม่ได้ส่งอีเมล (พนักงานไม่มีอีเมล หรือเคยส่งแล้ว)' : 'ส่งอีเมลไม่สำเร็จ' + (reason ? ` (${reason})` : '');
 }
 
-const blank = { emp_code: '', full_name: '', position: '', client_company: '', start_date: '', daily_wage: '', phone: '', email: '' };
+const blank = { emp_code: '', full_name: '', position: '', company_id: '', start_date: '', daily_wage: '', phone: '', email: '' };
 
 export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
   const [rows, setRows] = useState<any[]>([]);
   const [q, setQ] = useState('');
   const [form, setForm] = useState<any>(null);
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [cf, setCf] = useState('');
   const [paste, setPaste] = useState('');
   const [inviteNew, setInviteNew] = useState(true);
   const [bulkInvite, setBulkInvite] = useState(false);
@@ -33,17 +36,20 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
   const [vdocs, setVdocs] = useState<any[]>([]);
   const [vreqs, setVreqs] = useState<any[]>([]);
 
+  useEffect(() => { supabase.from('companies').select('*').order('name').then(({ data }) => setCompanies((data || []) as CompanyRow[])); }, []);
   const load = useCallback(async () => {
     let query = supabase.from('employees').select('*').order('emp_code').limit(100);
+    if (cf === 'none') query = query.is('company_id', null); else if (cf) query = query.eq('company_id', cf);
     const t = q.trim().replace(/[%,()]/g, '');
     if (t) query = query.or(`emp_code.ilike.%${t}%,full_name.ilike.%${t}%,client_company.ilike.%${t}%,email.ilike.%${t}%`);
     const { data } = await query; setRows(data || []);
-  }, [q]);
+  }, [q, cf]);
   useEffect(() => { const h = setTimeout(load, 250); return () => clearTimeout(h); }, [load]);
 
   async function save() {
     const f = form; if (!f.emp_code || !f.full_name) { setMsg({ t: 'err', s: 'กรอกรหัสและชื่อ-สกุล' }); return; }
-    const row: any = { emp_code: f.emp_code.trim(), full_name: f.full_name.trim(), position: f.position || null, client_company: f.client_company || null,
+    if (!f.company_id) { setMsg({ t: 'err', s: 'เลือกบริษัทที่ประจำ' }); return; }
+    const row: any = { emp_code: f.emp_code.trim(), full_name: f.full_name.trim(), position: f.position || null, company_id: f.company_id || null,
       start_date: f.start_date || null, daily_wage: Number(f.daily_wage) || 0, phone: f.phone || null, email: f.email ? f.email.trim().toLowerCase() : null, updated_at: new Date().toISOString() };
     const isNew = !f.id;
     const { data: saved, error } = await supabase.from('employees').upsert(row, { onConflict: 'emp_code' }).select('id');
@@ -73,7 +79,8 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
       for (let i = 0; i < fresh.length; i += 200) { const { data } = await supabase.from('employees').select('id').in('emp_code', fresh.slice(i, i + 200)); (data || []).forEach((x: any) => ids.push(x.id)); }
       note = ' · ' + await callInvite(ids, false);
     }
-    setMsg({ t: 'ok', s: `นำเข้า/อัปเดต ${up.length} รายการ (ใหม่ ${up.filter(u => !existing.has(u.emp_code)).length})` + note }); setPaste(''); load();
+    const miss = await supabase.from('employees').select('id', { count: 'exact', head: true }).is('company_id', null);
+    setMsg({ t: (miss.count || 0) > 0 ? 'err' : 'ok', s: `นำเข้า/อัปเดต ${up.length} รายการ (ใหม่ ${up.filter(u => !existing.has(u.emp_code)).length})` + ((miss.count || 0) > 0 ? ` · มีพนักงาน ${miss.count} คนที่ชื่อบริษัทไม่ตรงกับรายการ (กรองดู "ยังไม่ผูกบริษัท")` : '') + note }); setPaste(''); load();
   }
   async function resend(e: any) {
     if (!confirm(`ส่งอีเมลแจ้งสิทธิ์เข้าใช้ระบบให้ ${e.full_name} (${e.email})?`)) return;
@@ -93,6 +100,7 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="card">
       <div className="row" style={{ alignItems: 'end' }}>
+        <div className="field" style={{ flex: 2 }}><label>บริษัท</label><select value={cf} onChange={e => setCf(e.target.value)}><option value="">ทุกบริษัท</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}<option value="none">ยังไม่ผูกบริษัท</option></select></div>
         <div className="field" style={{ flex: 3 }}><label>ค้นหาพนักงาน</label><input type="text" value={q} onChange={e => setQ(e.target.value)} placeholder="รหัส / ชื่อ / บริษัท / อีเมล" /></div>
         {canEdit && <div style={{ flex: 'none', marginBottom: 12 }}><button className="btn" onClick={() => setForm({ ...blank })}>+ เพิ่มพนักงาน</button></div>}
       </div>
@@ -100,24 +108,25 @@ export default function EmployeesTab({ canEdit }: { canEdit: boolean }) {
       <div className="tablewrap"><table>
         <thead><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>บริษัท</th><th className="right">ค่าจ้าง/วัน</th><th>อีเมล</th><th>เข้าระบบ</th><th></th></tr></thead>
         <tbody>{rows.map(e => <tr key={e.id} style={{ opacity: e.active ? 1 : .5 }}>
-          <td>{e.emp_code}</td><td>{e.full_name}<div className="label">{e.position}</div></td><td>{e.client_company}</td><td className="right">{baht(e.daily_wage)}</td>
+          <td>{e.emp_code}</td><td>{e.full_name}<div className="label">{e.position}</div></td><td>{e.client_company || <span className="badge bad">ยังไม่ผูกบริษัท</span>}</td><td className="right">{baht(e.daily_wage)}</td>
           <td>{e.email || <span className="label">ยังไม่มีอีเมล</span>}</td><td>{e.user_id ? <span className="badge ok">แล้ว</span> : <span className="badge mute">ยัง</span>}</td>
           <td style={{ whiteSpace: 'nowrap' }}><button className="btn ghost sm" onClick={() => openView(e)}>เอกสาร</button>
-            {canEdit && <> {e.email && <button className="btn ghost sm" title={e.invited_at ? 'เคยส่งแล้ว ' + dateTimeTH(e.invited_at) : 'ยังไม่เคยส่ง'} onClick={() => resend(e)}>{e.invited_at ? 'ส่งอีเมลอีกครั้ง' : 'ส่งอีเมลเชิญ'}</button>} <button className="btn ghost sm" onClick={() => setForm({ ...e, daily_wage: String(e.daily_wage), start_date: e.start_date || '', position: e.position || '', client_company: e.client_company || '', phone: e.phone || '', email: e.email || '' })}>แก้ไข</button>
+            {canEdit && <> {e.email && <button className="btn ghost sm" title={e.invited_at ? 'เคยส่งแล้ว ' + dateTimeTH(e.invited_at) : 'ยังไม่เคยส่ง'} onClick={() => resend(e)}>{e.invited_at ? 'ส่งอีเมลอีกครั้ง' : 'ส่งอีเมลเชิญ'}</button>} <button className="btn ghost sm" onClick={() => setForm({ ...e, daily_wage: String(e.daily_wage), start_date: e.start_date || '', position: e.position || '', company_id: e.company_id || '', phone: e.phone || '', email: e.email || '' })}>แก้ไข</button>
               {' '}<button className="btn ghost sm" onClick={() => toggle(e)}>{e.active ? 'ปิดใช้งาน' : 'เปิดใช้งาน'}</button></>}</td></tr>)}</tbody></table></div>
       <p className="label">แสดงสูงสุด 100 รายการ ใช้ช่องค้นหาเพื่อหาคนอื่น</p>
 
       {canEdit && <>
         <h2 style={{ marginTop: 20 }}>นำเข้าพนักงานจาก Excel</h2>
-        <p className="sub">คัดลอกจาก Excel วางทีละบรรทัด คอลัมน์: รหัส, ชื่อ-สกุล, ตำแหน่ง, บริษัท, วันเริ่มงาน (ปี-เดือน-วัน เช่น 2022-03-01), ค่าจ้างรายวัน, เบอร์โทร, อีเมล (รหัสซ้ำจะอัปเดตข้อมูลเดิม)</p>
+        <p className="sub">คัดลอกจาก Excel วางทีละบรรทัด คอลัมน์: รหัส, ชื่อ-สกุล, ตำแหน่ง, บริษัท (ต้องตรงกับชื่อหรือ "ชื่อที่ใช้เรียกอื่น" ในแท็บบริษัท), วันเริ่มงาน (ปี-เดือน-วัน เช่น 2022-03-01), ค่าจ้างรายวัน, เบอร์โทร, อีเมล (รหัสซ้ำจะอัปเดตข้อมูลเดิม)</p>
         <textarea rows={5} value={paste} onChange={e => setPaste(e.target.value)} placeholder={'VTA-0001\tสมชาย รักดี\tพนักงานคลัง\tบริษัท ตัวอย่าง จำกัด\t2022-03-01\t350\t0812345678\tsomchai@example.com'} />
         <div className="check"><input id="binv" type="checkbox" checked={bulkInvite} onChange={e => setBulkInvite(e.target.checked)} /><label htmlFor="binv">ส่งอีเมลแจ้งพนักงานใหม่ที่นำเข้าพร้อมกัน (เฉพาะคนที่เพิ่งเพิ่มและมีอีเมล) — ปิดไว้ก่อนถ้ายังไม่พร้อมเปิดระบบ</label></div>
         <p><button className="btn" disabled={!paste.trim()} onClick={importPaste}>นำเข้า</button></p></>}
 
       {form && <div className="overlay"><div className="modal">
         <h2>{form.id ? 'แก้ไขพนักงาน' : 'เพิ่มพนักงาน'}</h2>
-        {[['emp_code', 'รหัสพนักงาน'], ['full_name', 'ชื่อ-สกุล'], ['position', 'ตำแหน่ง'], ['client_company', 'บริษัทที่ประจำ'], ['phone', 'เบอร์โทร'], ['email', 'อีเมล (ใช้ล็อกอิน)']].map(([k, l]) =>
+        {[['emp_code', 'รหัสพนักงาน'], ['full_name', 'ชื่อ-สกุล'], ['position', 'ตำแหน่ง'], ['phone', 'เบอร์โทร'], ['email', 'อีเมล (ใช้ล็อกอิน)']].map(([k, l]) =>
           <div className="field" key={k}><label>{l}</label><input type="text" value={form[k] ?? ''} onChange={e => setForm({ ...form, [k]: e.target.value })} disabled={k === 'emp_code' && !!form.id} /></div>)}
+        <div className="field"><label>บริษัทที่ประจำ</label><select value={form.company_id || ''} onChange={e => setForm({ ...form, company_id: e.target.value })}><option value="">เลือกบริษัท</option>{companies.filter(c => c.active || c.id === form.company_id).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
         <div className="row"><div className="field"><label>วันเริ่มงาน</label><input type="date" value={form.start_date || ''} onChange={e => setForm({ ...form, start_date: e.target.value })} /></div>
           <div className="field"><label>ค่าจ้างรายวัน (บาท)</label><input type="number" value={form.daily_wage} onChange={e => setForm({ ...form, daily_wage: e.target.value })} /></div></div>
         {!form.id && <div className="check"><input id="inv" type="checkbox" checked={inviteNew} onChange={e => setInviteNew(e.target.checked)} /><label htmlFor="inv">ส่งอีเมลแจ้งพนักงานว่าเข้าใช้ระบบได้แล้ว</label></div>}

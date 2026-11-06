@@ -1,12 +1,15 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
 import { supabase, Role } from '@/lib/supabase';
-import { baht, calcFee, dateTimeTH, STATUS_TH, STATUS_TONE } from '@/lib/format';
+import { baht, calcFee, dateTH, dateTimeTH, STATUS_TH, STATUS_TONE } from '@/lib/format';
 import { openPrivate } from '../Uploads';
+import { CompanyRow } from '@/lib/cycle';
 
 const FILTERS = [['pending_hr', 'รอ HR อนุมัติยอด'], ['pending_sign', 'รอพนักงานเซ็น'], ['approved', 'รอโอน'], ['transferred', 'โอนแล้ว'], ['deducted', 'หักแล้ว'], ['rejected', 'ไม่อนุมัติ'], ['all', 'ทั้งหมด']];
 
 export default function RequestsTab({ role }: { role: Role }) {
+  const [companies, setCompanies] = useState<CompanyRow[]>([]);
+  const [cf, setCf] = useState('');
   const [filter, setFilter] = useState(role === 'finance' ? 'approved' : 'pending_hr');
   const [rows, setRows] = useState<any[]>([]);
   const [docs, setDocs] = useState<any[]>([]);
@@ -26,13 +29,15 @@ export default function RequestsTab({ role }: { role: Role }) {
   const canFin = role === 'finance' || role === 'admin';
 
   const load = useCallback(async () => {
-    let q = supabase.from('advance_requests').select('*, employees(emp_code, full_name, client_company, daily_wage), pay_periods(label)').order('created_at', { ascending: false }).limit(300);
+    let q = supabase.from('advance_requests').select('*, employees!inner(emp_code, full_name, client_company, daily_wage, company_id), pay_periods(label, pay_date)').order('created_at', { ascending: false }).limit(300);
+    if (cf) q = q.eq('employees.company_id', cf);
     if (filter !== 'all') q = q.eq('status', filter);
     const { data } = await q; const list = data || []; setRows(list);
     const ids = list.map((r: any) => r.id); const eids = Array.from(new Set(list.map((r: any) => r.employee_id)));
     if (ids.length) { const { data: d } = await supabase.from('signed_documents').select('id,request_id,doc_type,pdf_path,signed_at').in('request_id', ids); setDocs(d || []); } else setDocs([]);
     if (eids.length) { const { data: a } = await supabase.from('loan_applications').select('employee_id,data').in('employee_id', eids as string[]); setApps(Object.fromEntries((a || []).map((x: any) => [x.employee_id, x.data]))); }
-  }, [filter]);
+  }, [filter, cf]);
+  useEffect(() => { supabase.from('companies').select('*').order('name').then(({ data }) => setCompanies((data || []) as CompanyRow[])); }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { supabase.from('app_settings').select('key,value').then(({ data }) => { if (data) setCfg(Object.fromEntries(data.map((x: any) => [x.key, Number(x.value)])) as any); }); }, []);
 
@@ -76,6 +81,7 @@ export default function RequestsTab({ role }: { role: Role }) {
   return (
     <div className="card">
       <h2>คำขอเบิกเงินล่วงหน้า</h2>
+      <div className="field" style={{ maxWidth: 320 }}><label>บริษัท</label><select value={cf} onChange={e => setCf(e.target.value)}><option value="">ทุกบริษัท</option>{companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
       <div className="nav" style={{ justifyContent: 'flex-start', marginBottom: 12 }}>
         {FILTERS.map(([k, l]) => <button key={k} className={'pill' + (filter === k ? ' active' : '')} onClick={() => setFilter(k)}>{l}</button>)}
       </div>
@@ -89,7 +95,7 @@ export default function RequestsTab({ role }: { role: Role }) {
             return <tr key={r.id}>
               <td>{dateTimeTH(r.created_at)}</td>
               <td><b>{r.employees?.full_name}</b><div className="label">{r.employees?.emp_code} · {r.employees?.client_company}</div></td>
-              <td>{r.pay_periods?.label}</td>
+              <td>{r.pay_periods?.label}<div className="label">จ่าย {dateTH(r.pay_periods?.pay_date)}</div></td>
               <td className="right" title={`${r.days_snapshot} วัน × ${r.wage_snapshot}`}>{baht(r.limit_snapshot)}<div className="label">{r.days_snapshot} วัน × {baht(r.wage_snapshot)}</div></td>
               <td className="right">{baht(r.requested_amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.amount)}</td><td className="right">{['pending_hr', 'rejected', 'cancelled'].includes(r.status) ? '-' : baht(r.total_deduct)}</td>
               <td><span className={'badge ' + STATUS_TONE[r.status]}>{STATUS_TH[r.status]}</span>{r.transfer_ref && <div className="label">อ้างอิง {r.transfer_ref}</div>}{r.hr_note && <div className="label">{r.hr_note}</div>}</td>

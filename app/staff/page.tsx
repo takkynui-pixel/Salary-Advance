@@ -6,12 +6,13 @@ import RequestsTab from '@/components/staff/RequestsTab';
 import AttendanceTab from '@/components/staff/AttendanceTab';
 import EmployeesTab from '@/components/staff/EmployeesTab';
 import PeriodsTab from '@/components/staff/PeriodsTab';
+import CompaniesTab from '@/components/staff/CompaniesTab';
 import SettingsTab from '@/components/staff/SettingsTab';
 
 export default function Staff() {
   const { role, session } = useAuth();
   const tabs = useMemo(() => {
-    const all = [{ key: 'req', label: 'คำขอเบิก' }, { key: 'att', label: 'วันทำงาน' }, { key: 'emp', label: 'พนักงาน' }, { key: 'per', label: 'รอบ/รายงาน' }, { key: 'set', label: 'ตั้งค่า' }];
+    const all = [{ key: 'req', label: 'คำขอเบิก' }, { key: 'att', label: 'วันทำงาน' }, { key: 'emp', label: 'พนักงาน' }, { key: 'com', label: 'บริษัท' }, { key: 'per', label: 'รอบ/รายงาน' }, { key: 'set', label: 'ตั้งค่า' }];
     if (role === 'admin') return all;
     if (role === 'hr') return all.filter(t => t.key !== 'set');
     return all.filter(t => t.key === 'req' || t.key === 'emp' || t.key === 'per');
@@ -28,6 +29,7 @@ export default function Staff() {
         {tab === 'req' && <RequestsTab role={role} />}
         {tab === 'att' && <AttendanceTab />}
         {tab === 'emp' && <EmployeesTab canEdit={role === 'hr' || role === 'admin'} />}
+        {tab === 'com' && (role === 'hr' || role === 'admin') && <CompaniesTab />}
         {tab === 'per' && <PeriodsTab role={role} />}
         {tab === 'set' && role === 'admin' && <SettingsTab />}
       </>}
